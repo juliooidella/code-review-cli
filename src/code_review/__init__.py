@@ -514,7 +514,8 @@ def init(
     rel_prompt = prompt_path.relative_to(root_path)
     
     # Define o comando de execução baseado no SO/script
-    run_command = f"{'./' if selected_script == 'sh' else '.\\'}{rel_script} feature-branch"
+    prefix = "./" if selected_script == "sh" else ".\\"
+    run_command = f"{prefix}{rel_script} feature-branch"
 
     console.print(Panel(
         f"Script: [cyan]{rel_script}[/cyan]\n"
