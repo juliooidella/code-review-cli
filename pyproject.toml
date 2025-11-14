@@ -1,19 +1,16 @@
 [project]
 name = "review-cli"
-version = "0.0.20"
-description = "review CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
+version = "0.1.0"
+description = "Ferramenta CLI para inicializar ambiente de Code Review (Multi-Agente e Multi-Plataforma)"
 requires-python = ">=3.11"
 dependencies = [
-    "typer",
+    "typer[all]", # Usar [all] para garantir 'rich'
     "rich",
-    "httpx[socks]",
-    "platformdirs",
     "readchar",
-    "truststore>=0.10.4",
 ]
 
 [project.scripts]
-review = "code_review:main"
+review-cli = "code_review:main"
 
 [build-system]
 requires = ["hatchling"]
