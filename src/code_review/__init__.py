@@ -200,7 +200,7 @@ Você é um Engenheiro de Software Sênior especializado em revisão de código.
 
 ## Instruções de Execução (Para o Copiloto)
 
-**IMPORTANTE:** O usuário fornecerá o nome de uma branch como argumento. Você deve primeiro gerar o relatório de diff antes de analisá-lo.
+**IMPORTANTE:** Quando o usuário fornecer o nome de uma branch como argumento. Você deve primeiro gerar o relatório de diff antes de analisá-lo. Se o usuário não fornecer uma branch, use a branch atual. Para identificar a branch atual, você pode usar o comando `git rev-parse --abbrev-ref HEAD`.
 
 1.  **Execute o Script de Relatório:**
     Execute o script de relatório para gerar o diff. O comando (a partir da raiz do projeto) é:
