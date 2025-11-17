@@ -80,10 +80,10 @@ SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (Bash/Zsh) - Linux/Mac", "ps": "PowerS
 
 # --- CONTEÚDO DOS ARQUIVOS (Embedados) ---
 
-PS_LOG_CREATE_DIR = format_ascii_log("Criando diretório de relatórios", "info")
-PS_LOG_PROCESSING = format_ascii_log("Processando alterações", "info")
-PS_LOG_SUCCESS = format_ascii_log("Relatório salvo", "success")
-PS_LOG_ERROR = format_ascii_log("Falha ao gerar relatório", "error")
+def _ps_log(text: str, status: str) -> str:
+    return format_ascii_log(text, status).replace("[", "").replace("]", "")
+
+
 
 # Script Bash (Linux/Mac)
 SCRIPT_CONTENT_SH = """#!/bin/bash
@@ -175,7 +175,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $DirSaida = Join-Path $ScriptDir "..\\..\\diffs"
 
 if (-not (Test-Path $DirSaida)) {{
-    Write-Host "{LOG_CREATE_DIR}: $DirSaida" -ForegroundColor Yellow
+    Write-Host ('Criando diretório de relatórios: ' + $DirSaida) -ForegroundColor Yellow
     New-Item -ItemType Directory -Force -Path $DirSaida | Out-Null
 }}
 
@@ -188,7 +188,7 @@ if (-not $NomeArquivoSafe) {{
 
 $ArquivoSaida = Join-Path $DirSaida ("relatorio_diff_{{0}}.md" -f $NomeArquivoSafe)
 
-Write-Host "{LOG_PROCESSING}: base=$BranchBase alvo=$BranchAlvo" -ForegroundColor Yellow
+Write-Host ('Processando alterações: base=' + $BranchBase + ' alvo=' + $BranchAlvo) -ForegroundColor Yellow
 
 try {{
     $Projeto = Split-Path -Leaf (Get-Location)
@@ -222,29 +222,25 @@ try {{
         $Content += "- Nenhum commit encontrado"
     }}
 
-    $Content += @("", "## Detalhes do Código (Diff)", "", "```diff")
+    $Content += @("", "## Detalhes do Código (Diff)", "", '```diff')
     $DiffOutput = git diff "origin/$BranchBase...$BranchAlvo" -- . ':(exclude)*.md'
     if ($DiffOutput) {{
         $Content += $DiffOutput
     }} else {{
         $Content += "# Nenhum diff gerado"
     }}
-    $Content += "```"
+    $Content += '```'
 
     $Content | Out-File -FilePath $ArquivoSaida -Encoding utf8 -Force
-    Write-Host "{LOG_SUCCESS}: $ArquivoSaida" -ForegroundColor Green
+    Write-Host ('Relatório salvo: ' + $ArquivoSaida) -ForegroundColor Green
 }}
 catch {{
-    Write-Host "{LOG_ERROR}: $_" -ForegroundColor Red
+    Write-Host ('Falha ao gerar relatório: ' + $_) -ForegroundColor Red
     Write-Error $_
     exit 1
 }}
 """.format(
     APP_VERSION=APP_VERSION,
-    LOG_CREATE_DIR=PS_LOG_CREATE_DIR,
-    LOG_PROCESSING=PS_LOG_PROCESSING,
-    LOG_SUCCESS=PS_LOG_SUCCESS,
-    LOG_ERROR=PS_LOG_ERROR,
 )
 
 PROMPT_CONTENT_TEMPLATE = """---
