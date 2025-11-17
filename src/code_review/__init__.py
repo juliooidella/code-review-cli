@@ -15,12 +15,15 @@ Uso:
     uvx src/code_review/__init__.py init --here
 """
 
+import hashlib
 import os
 import sys
 import time
 import platform
 from pathlib import Path
 from typing import Optional
+
+from importlib import metadata
 
 import typer
 import readchar
@@ -32,6 +35,17 @@ from rich.align import Align
 from rich.tree import Tree
 from rich.table import Table
 from typer.core import TyperGroup
+
+from code_review.powershell_utils import (
+    ensure_utf8_bom,
+    format_ascii_log,
+    sanitize_branch_name,
+)
+
+try:
+    APP_VERSION = metadata.version("review-cli")
+except metadata.PackageNotFoundError:
+    APP_VERSION = "0.0.0-dev"
 
 # --- CONFIGURAÇÃO DOS AGENTES (Mapeamento de Pastas) ---
 
@@ -65,6 +79,11 @@ AGENT_CONFIG = {
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (Bash/Zsh) - Linux/Mac", "ps": "PowerShell - Windows"}
 
 # --- CONTEÚDO DOS ARQUIVOS (Embedados) ---
+
+PS_LOG_CREATE_DIR = format_ascii_log("Criando diretório de relatórios", "info")
+PS_LOG_PROCESSING = format_ascii_log("Processando alterações", "info")
+PS_LOG_SUCCESS = format_ascii_log("Relatório salvo", "success")
+PS_LOG_ERROR = format_ascii_log("Falha ao gerar relatório", "error")
 
 # Script Bash (Linux/Mac)
 SCRIPT_CONTENT_SH = """#!/bin/bash
@@ -131,64 +150,102 @@ SCRIPT_CONTENT_PS = """<#
 .DESCRIPTION
     Uso: .\\git-relatorio.ps1 "feature/minha-branch"
 #>
+# Review CLI Version: {APP_VERSION}
+# Este arquivo é gerado automaticamente via `review-cli init --script ps`.
+
+[CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)]
     [string]$BranchAlvo,
     [string]$BranchBase = "main"
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# --- CONFIGURAÇÃO DE DIRETÓRIO ---
+try {{
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+}} catch {{
+    Write-Verbose "Não foi possível ajustar OutputEncoding (ambiente antigo)."
+}}
+$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
+$PSDefaultParameterValues['Set-Content:Encoding'] = 'utf8'
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-# Navega dois níveis acima (.code_review/scripts/ -> raiz -> diffs)
 $DirSaida = Join-Path $ScriptDir "..\\..\\diffs"
 
-if (-not (Test-Path $DirSaida)) {
-    Write-Host "📂 Diretório central '$DirSaida' não encontrado. Criando..." -ForegroundColor Cyan
+if (-not (Test-Path $DirSaida)) {{
+    Write-Host "{LOG_CREATE_DIR}: $DirSaida" -ForegroundColor Yellow
     New-Item -ItemType Directory -Force -Path $DirSaida | Out-Null
-}
+}}
 
-$NomeArquivoSafe = $BranchAlvo -replace '[/\\:]', '-'
-$ArquivoSaida = Join-Path $DirSaida "relatorio_diff_$NomeArquivoSafe.md"
+$NomeArquivoSafe = $BranchAlvo -replace '[\\/\\:\\s\\.]', '-'
+$NomeArquivoSafe = $NomeArquivoSafe -replace '-+', '-'
+$NomeArquivoSafe = $NomeArquivoSafe.Trim('-')
+if (-not $NomeArquivoSafe) {{
+    $NomeArquivoSafe = "branch"
+}}
 
-Write-Host "🔄 Processando alterações entre '$BranchBase' e '$BranchAlvo'..." -ForegroundColor Yellow
+$ArquivoSaida = Join-Path $DirSaida ("relatorio_diff_{0}.md" -f $NomeArquivoSafe)
 
-# --- GERAÇÃO DO MARKDOWN ---
-$Encoding = "UTF8" # Garante caracteres corretos
+Write-Host "{LOG_PROCESSING}: base=$BranchBase alvo=$BranchAlvo" -ForegroundColor Yellow
 
-try {
-    $Content = @()
-    $Content += "# Relatório de Alterações: $BranchAlvo"
-    $Content += "**Projeto:** $(Split-Path -Leaf (Get-Location))"
-    $Content += "**Gerado em:** $(Get-Date)"
-    $Content += "**Branch Base:** $BranchBase"
-    $Content += "**Branch Alvo:** $BranchAlvo"
-    $Content += ""
-    $Content += "---"
-    $Content += ""
-    $Content += "## 📂 Arquivos Alterados"
-    $Content += ""
-    $Content += (git diff --name-only "origin/$BranchBase..$BranchAlvo" -- . ':(exclude)*.md') -replace '^', '- '
-    $Content += ""
-    $Content += "## 📝 Histórico de Commits"
-    $Content += ""
-    $Content += (git log --no-merges --oneline "origin/$BranchBase..$BranchAlvo") -replace '^', '- '
-    $Content += ""
-    $Content += "## 💻 Detalhes do Código (Diff)"
-    $Content += ""
-    $Content += "```diff"
-    $Content += (git diff "origin/$BranchBase...$BranchAlvo" -- . ':(exclude)*.md') -notmatch '^-[^-]'
+try {{
+    $Projeto = Split-Path -Leaf (Get-Location)
+    $Agora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+    $Content = @(
+        "# Relatório de Alterações: $BranchAlvo",
+        "**Projeto:** $Projeto",
+        "**Gerado em:** $Agora",
+        "**Branch Base:** $BranchBase",
+        "**Branch Alvo:** $BranchAlvo",
+        "",
+        "---",
+        "",
+        "## Arquivos Alterados",
+        ""
+    )
+
+    $DiffFiles = git diff --name-only "origin/$BranchBase..$BranchAlvo" -- . ':(exclude)*.md'
+    if ($DiffFiles) {{
+        $Content += $DiffFiles | ForEach-Object {{ "- $_" }}
+    }} else {{
+        $Content += "- Nenhum arquivo alterado"
+    }}
+
+    $Content += @("", "## Histórico de Commits", "")
+    $Commits = git log --no-merges --oneline "origin/$BranchBase..$BranchAlvo"
+    if ($Commits) {{
+        $Content += $Commits | ForEach-Object {{ "- $_" }}
+    }} else {{
+        $Content += "- Nenhum commit encontrado"
+    }}
+
+    $Content += @("", "## Detalhes do Código (Diff)", "", "```diff")
+    $DiffOutput = git diff "origin/$BranchBase...$BranchAlvo" -- . ':(exclude)*.md'
+    if ($DiffOutput) {{
+        $Content += $DiffOutput
+    }} else {{
+        $Content += "# Nenhum diff gerado"
+    }}
     $Content += "```"
 
-    $Content | Out-File -FilePath $ArquivoSaida -Encoding utf8
-    
-    Write-Host "✅ Sucesso! O arquivo foi salvo em: $ArquivoSaida" -ForegroundColor Green
-}
-catch {
-    Write-Error "Falha ao gerar relatório: $_"
-}
-"""
+    $Content | Out-File -FilePath $ArquivoSaida -Encoding utf8 -Force
+    Write-Host "{LOG_SUCCESS}: $ArquivoSaida" -ForegroundColor Green
+}}
+catch {{
+    Write-Host "{LOG_ERROR}: $_" -ForegroundColor Red
+    Write-Error $_
+    exit 1
+}}
+""".format(
+    APP_VERSION=APP_VERSION,
+    LOG_CREATE_DIR=PS_LOG_CREATE_DIR,
+    LOG_PROCESSING=PS_LOG_PROCESSING,
+    LOG_SUCCESS=PS_LOG_SUCCESS,
+    LOG_ERROR=PS_LOG_ERROR,
+)
 
 PROMPT_CONTENT_TEMPLATE = """---
 description: Realiza uma revisão de código detalhada e construtiva com base em um diff de git.
@@ -205,6 +262,9 @@ Você é um Engenheiro de Software Sênior especializado em revisão de código.
 1.  **Execute o Script de Relatório:**
     Execute o script de relatório para gerar o diff. O comando (a partir da raiz do projeto) é:
     `{SCRIPT_COMMAND_PLACEHOLDER}`
+    
+    Se o ambiente bloquear scripts por causa da ExecutionPolicy, use:
+    `powershell.exe -ExecutionPolicy Bypass -File {SCRIPT_COMMAND_PLACEHOLDER}`
 
 2.  **Localize o Relatório:** O script acima salvará um arquivo em `./diffs/relatorio_diff_<nome-da-branch-formatado>.md`.
 
@@ -452,17 +512,37 @@ def callback(ctx: typer.Context):
         console.print(Align.center("[dim]Execute 'review-cli init' para começar.[/dim]"))
         console.print()
 
-def create_file(path: Path, content: str, tracker: StepTracker, step_key: str, make_executable: bool = False):
+def create_file(
+    path: Path,
+    content: str,
+    tracker: StepTracker,
+    step_key: str,
+    make_executable: bool = False,
+    powershell_script: bool = False,
+    skip_if_unchanged: bool = False,
+):
     """Helper para criar arquivos e atualizar o tracker."""
     try:
         tracker.start(step_key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Normaliza quebras de linha para Unix (LF)
-        content = content.replace('\r\n', '\n')
-        
-        with open(path, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(content)
+
+        # Normaliza quebras de linha para Unix (LF) e converte conforme o tipo
+        normalized = content.replace('\r\n', '\n').replace('\r', '\n')
+
+        if powershell_script:
+            payload = ensure_utf8_bom(normalized, newline="\r\n")
+        else:
+            payload = normalized.encode('utf-8')
+
+        if skip_if_unchanged and path.exists():
+            existing = path.read_bytes()
+            if existing == payload:
+                digest = hashlib.sha256(payload).hexdigest()[:8]
+                tracker.complete(step_key, f"inalterado (sha={digest})")
+                return
+
+        with open(path, 'wb') as f:
+            f.write(payload)
             
         # Torna executável (Linux/Mac)
         if make_executable and os.name != 'nt':
@@ -475,6 +555,14 @@ def create_file(path: Path, content: str, tracker: StepTracker, step_key: str, m
     except Exception as e:
         tracker.error(step_key, str(e))
         raise e
+
+
+def build_windows_script_command(script_path: Path) -> str:
+    """
+    Monta o comando padrão usado nos prompts para executar o script PowerShell.
+    """
+    script_path_str = script_path.as_posix().replace('/', '\\')
+    return f".\\{script_path_str} <nome-da-branch-fornecida>"
 
 @app.command()
 def init(
@@ -552,7 +640,14 @@ def init(
         if selected_script == "sh":
             script_path = script_dir / "git-relatorio.sh"
             content = SCRIPT_CONTENT_SH
-            create_file(script_path, content, tracker, "script", make_executable=True)
+            create_file(
+                script_path,
+                content,
+                tracker,
+                "script",
+                make_executable=True,
+                skip_if_unchanged=True,
+            )
             
             # Define o comando dinâmico para o prompt (relativo ao root_path)
             rel_script_path = script_path.relative_to(root_path)
@@ -560,16 +655,19 @@ def init(
         else:
             script_path = script_dir / "git-relatorio.ps1"
             content = SCRIPT_CONTENT_PS
-            create_file(script_path, content, tracker, "script", make_executable=False)
+            create_file(
+                script_path,
+                content,
+                tracker,
+                "script",
+                make_executable=False,
+                powershell_script=True,
+                skip_if_unchanged=True,
+            )
             
             # Define o comando dinâmico para o prompt (relativo ao root_path)
             rel_script_path = script_path.relative_to(root_path)
-            
-            # Correção: Monta o comando do PowerShell fora do f-string para evitar erro de '\'
-            # Primeiro, obtém o caminho formatado para Windows
-            script_path_str = rel_script_path.as_posix().replace('/', '\\')
-            # Então, insere a string simples no f-string
-            script_command = f".\\{script_path_str} <nome-da-branch-fornecida>"
+            script_command = build_windows_script_command(rel_script_path)
 
         time.sleep(0.3)
 

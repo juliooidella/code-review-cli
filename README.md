@@ -63,6 +63,8 @@ review-cli init
 
 A ferramenta fará duas perguntas simples (você pode navegar com as setas):
 
+> Pode executar o `review-cli init` quantas vezes quiser: o CLI verifica o conteúdo atual dos scripts antes de sobrescrever e informa o hash quando tudo já está atualizado.
+
 **1. Qual Assistente de IA você usa?** (Isso decide onde salvar o prompt).
 
 ```text
@@ -92,6 +94,8 @@ Você **não precisa** executar o script manualmente. O prompt que o `review-cli
 
 > A IA irá ler o prompt, **executar o script (`.sh` ou `.ps1`) por conta própria**, ler o arquivo `.md` gerado na pasta `diffs/` e fornecer a análise detalhada.
 
+> Windows: se precisar rodar manualmente, utilize `powershell.exe -ExecutionPolicy Bypass -File .\.code_review\scripts\git-relatorio.ps1 <nome-da-branch>` para contornar bloqueios de ExecutionPolicy.
+
 -----
 
 ## ⚙️ O que ele cria?
@@ -113,6 +117,8 @@ seu-projeto/
     └── (Aqui é onde os relatórios .md aparecerão)
 ```
 
+Esses arquivos são tratados de forma idempotente — se você rodar o `init` novamente e nada tiver mudado, os scripts permanecem intocados e o CLI apenas reporta o hash atual.
+
 -----
 
 ## 🖥️ Recursos Principais
@@ -127,4 +133,3 @@ seu-projeto/
 -----
 
 [Reportar Bug](https://www.google.com/search?q=https://github.com/oidellajulio/code-review-cli/issues) • [Contribuir](https://www.google.com/search?q=https://github.com/oidellajulio/code-review-cli/pulls)
-
