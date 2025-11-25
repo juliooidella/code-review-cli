@@ -46,7 +46,7 @@ Vamos configurar seu primeiro projeto.
 
 ### Passo 1: Instale a Ferramenta
 
-Recomendamos usar o `uv` (um instalador rápido de Python). Se você não o tem, [instale-o aqui](https://github.com/astral-sh/uv).
+Recomendamos usar o `uv` (um instalador rápido de Python). Se você não o tem, [instale-o aqui](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```bash
 # Instale o review-cli globalmente
