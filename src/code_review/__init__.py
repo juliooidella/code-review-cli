@@ -74,6 +74,10 @@ AGENT_CONFIG = {
         "name": "Genérico (Outros)",
         "prompt_dir": "code_review/prompts",
     },
+    "antigravity": {
+        "name": "Google Antigravity",
+        "prompt_dir": ".agent/workflows",
+    },
 }
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (Bash/Zsh) - Linux/Mac", "ps": "PowerShell - Windows"}
